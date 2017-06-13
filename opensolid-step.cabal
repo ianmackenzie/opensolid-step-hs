@@ -1,0 +1,50 @@
+name:                opensolid-step
+version:             1.0.0
+-- synopsis:
+-- description:
+homepage:            https://github.com/ianmackenzie/opensolid-step#readme
+license:             MPL-2.0
+license-file:        LICENSE
+author:              Ian Mackenzie
+maintainer:          ian.e.mackenzie@gmail.com
+copyright:           Copyright 2017 by Ian Mackenzie
+category:            Parsing
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     OpenSolid.Step
+                     , OpenSolid.Step.Types
+                     , OpenSolid.Step.Header
+                     , OpenSolid.Step.Parse
+  other-modules:       OpenSolid.Step.Internal.Types
+  build-depends:       base >= 4.7 && < 5
+                     , text
+                     , attoparsec
+                     , time
+                     , bytestring
+  default-language:    Haskell2010
+
+executable opensolid-step-exe
+  hs-source-dirs:      app
+  main-is:             Main.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , opensolid-step
+                     , time
+  default-language:    Haskell2010
+
+test-suite opensolid-step-test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Spec.hs
+  build-depends:       base
+                     , opensolid-step
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  default-language:    Haskell2010
+
+source-repository head
+  type:     git
+  location: https://github.com/ianmackenzie/opensolid-step

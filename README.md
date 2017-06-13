@@ -1,1 +1,1 @@
-# opensolid-step-hs
+# opensolid-step
