@@ -1,23 +1,23 @@
 module OpenSolid.Step.Internal.Types where
 
+import Data.Text
 
-{-| An attribute value string such as "1", "2.", "'some string'", ".STEEL." or
-"#34".
+{-| Attribute value text such as "1", "2.", "'some string'", ".STEEL." or "#34".
 -}
 newtype AttributeValue
-    = AttributeValue String
+    = AttributeValue Text
 
 
 {-| A capitalized type name like "IFCWALL".
 -}
 newtype TypeName
-    = TypeName String
+    = TypeName Text
 
 
 {-| A capitalized enum name like "STEEL", with no leading or trailing periods.
 -}
 newtype EnumName
-    = EnumName String
+    = EnumName Text
 
 
 {-| A single STEP entity.
@@ -34,8 +34,8 @@ data Attribute
     | BoolAttribute Bool
     | IntAttribute Int
     | DoubleAttribute Double
-    | StringAttribute String
-    | BinaryAttribute String
+    | TextAttribute Text
+    | BinaryAttribute Text
     | EnumAttribute EnumName
     | ReferenceTo Entity
     | TypedAttribute TypeName Attribute
@@ -48,8 +48,8 @@ data ParsedAttribute
     | ParsedBoolAttribute Bool
     | ParsedIntAttribute Int
     | ParsedDoubleAttribute Double
-    | ParsedStringAttribute String
-    | ParsedBinaryAttribute String
+    | ParsedTextAttribute Text
+    | ParsedBinaryAttribute Text
     | ParsedEnumAttribute EnumName
     | ParsedReference Int
     | ParsedTypedAttribute TypeName ParsedAttribute

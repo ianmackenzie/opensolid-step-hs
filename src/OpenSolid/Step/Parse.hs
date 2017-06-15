@@ -12,6 +12,7 @@ import Data.Word (Word8)
 import qualified Data.ByteString as ByteString
 import Control.Applicative
 import Control.Monad
+import Data.Text as Text
 
 
 {-| Types of errors that can be encountered when parsing a file:
