@@ -2,16 +2,19 @@
 
 module OpenSolid.Step.Parse
     ( Error(..)
-    , comment
-    , whitespace
+    , parseComment
+    , parseWhitespace
+    , parseList
+    , parseKeyword
     ) where
 
-import qualified Data.Attoparsec.ByteString as Attoparsec
-import Data.Attoparsec.ByteString (Parser)
-import Data.Word (Word8)
-import qualified Data.ByteString as ByteString
+import Data.Attoparsec.ByteString.Char8 as Attoparsec
+import Data.Word
+import Data.ByteString as ByteString
 import Control.Applicative
 import Control.Monad
+import OpenSolid.Step.Internal.Types as Types
+import Data.Text.Encoding as Encoding
 import Data.Text as Text
 
 
@@ -32,22 +35,18 @@ data Error
     | ResolveError Int
 
 
-spaces :: Parser ()
-spaces =
-    Attoparsec.skipWhile (\word -> word == 32 || word == 10 || word == 13)
 
-
-comment :: Parser ()
-comment =
+parseComment :: Parser ()
+parseComment =
     let
         nonAsterisks =
-            Attoparsec.skipWhile (/= 42)
+            Attoparsec.skipWhile (/= '*')
 
         asterisks =
-            Attoparsec.skipWhile (== 42)
+            Attoparsec.skipWhile (== '*')
 
         endingSlash =
-            void (Attoparsec.word8 47)
+            void (Attoparsec.char '/')
 
         continueComment =
             nonAsterisks *> asterisks *> (endingSlash <|> continueComment)
@@ -55,198 +54,106 @@ comment =
     Attoparsec.string "/*" *> continueComment
 
 
-whitespace :: Parser ()
-whitespace =
-    spaces *> Attoparsec.skipMany (comment *> spaces)
+parseWhitespace :: Parser ()
+parseWhitespace =
+    Attoparsec.skipSpace
+        *> Attoparsec.skipMany (parseComment *> Attoparsec.skipSpace)
 
 
--- comma :: Parser ()
--- comma =
---     Parser.succeed ()
---         |. whitespace
---         |. Parser.symbol ","
---         |. whitespace
+parseComma :: Parser ()
+parseComma =
+    parseWhitespace *> Attoparsec.char ',' *> parseWhitespace
 
 
--- list :: Parser a -> Parser (List a)
--- list item =
---     Parser.succeed identity
---         |. Parser.symbol "("
---         |. whitespace
---         |= Parser.oneOf
---             [ Parser.symbol ")" |> Parser.map (\() -> [])
---             , Parser.succeed (\first rest -> first : rest)
---                 |= item
---                 |= Parser.repeat Parser.zeroOrMore
---                     (Parser.succeed identity
---                         |. comma
---                         |= item
---                     )
---                 |. whitespace
---                 |. Parser.symbol ")"
---             ]
+parseList :: Parser a -> Parser [a]
+parseList item =
+    Attoparsec.char '('
+        *> parseWhitespace
+        *> Attoparsec.sepBy item parseComma
+        <* parseWhitespace
+        <* Attoparsec.char ')'
 
 
--- keyword :: Parser String
--- keyword =
---     let
---         validFirstCharacter character =
---             Char.isUpper character || character == '_'
+parseKeyword :: Parser Text
+parseKeyword =
+    let
+        validFirst char =
+            (char >= 'A' && char <= 'Z') || char == '_'
 
---         validOtherCharacter character =
---             validFirstCharacter character || Char.isDigit character
---     in
---     Parser.source
---         (Parser.ignore (Parser.Exactly 1) validFirstCharacter
---             |. Parser.ignore Parser.zeroOrMore validOtherCharacter
---         )
+        validOther char =
+            validFirst char || (char >= '0' && char <= '9')
 
-
--- typeName :: Parser Types.TypeName
--- typeName =
---     keyword |> Parser.map Types.TypeName
+        skipKeyword =
+            Attoparsec.satisfy validFirst *> Attoparsec.skipWhile validOther
+    in
+    Encoding.decodeUtf8 <$> fst <$> Attoparsec.match skipKeyword
 
 
--- isBasic :: Char -> Bool
--- isBasic character =
---     character /= '\'' && character /= '\\'
+parseTypeName :: Parser Types.TypeName
+parseTypeName =
+    Types.TypeName <$> parseKeyword
 
 
--- isHexCharacter :: Char -> Bool
--- isHexCharacter character =
---     (character >= '0' && character <= '9')
---         || (character >= 'A' && character <= 'F')
+parseText :: Parser Text
+parseText =
+    let
+        apostrophe =
+            void (Attoparsec.char '\'')
+
+        escapedApostrophe =
+            void (Attoparsec.string "''")
+
+        continueText =
+            Attoparsec.skipWhile (/= '\'')
+                *> ((escapedApostrophe *> continueText) <|> apostrophe)
+
+        trim =
+            ByteString.init . ByteString.tail
+
+        parser =
+             apostrophe *> continueText
+    in
+    Encoding.decodeUtf8 <$> trim <$> fst <$> Attoparsec.match parser
 
 
--- hexDigit :: Parser Int
--- hexDigit =
---     Parser.oneOf
---         [ Parser.symbol "0" |> Parser.map (\() -> 0)
---         , Parser.symbol "1" |> Parser.map (\() -> 1)
---         , Parser.symbol "2" |> Parser.map (\() -> 2)
---         , Parser.symbol "3" |> Parser.map (\() -> 3)
---         , Parser.symbol "4" |> Parser.map (\() -> 4)
---         , Parser.symbol "5" |> Parser.map (\() -> 5)
---         , Parser.symbol "6" |> Parser.map (\() -> 6)
---         , Parser.symbol "7" |> Parser.map (\() -> 7)
---         , Parser.symbol "8" |> Parser.map (\() -> 8)
---         , Parser.symbol "9" |> Parser.map (\() -> 9)
---         , Parser.symbol "A" |> Parser.map (\() -> 10)
---         , Parser.symbol "B" |> Parser.map (\() -> 11)
---         , Parser.symbol "C" |> Parser.map (\() -> 12)
---         , Parser.symbol "D" |> Parser.map (\() -> 13)
---         , Parser.symbol "E" |> Parser.map (\() -> 14)
---         , Parser.symbol "F" |> Parser.map (\() -> 15)
---         ]
+parseBinary :: Parser Text
+parseBinary =
+    Encoding.decodeUtf8 <$>
+        (Attoparsec.char '"'
+            *> Attoparsec.takeWhile (/= '"')
+            <* Attoparsec.char '"'
+        )
 
 
--- x0 :: Int -> Int -> String
--- x0 high low =
---     String.fromCodePoints [ Bitwise.shiftLeftBy 4 high + low ]
+parseTrue :: Parser Bool
+parseTrue =
+    Attoparsec.string ".T." *> return True
 
 
--- x2 :: List ( Int, Int, Int, Int ) -> String
--- x2 hexDigits =
---     let
---         codePoint ( a, b, c, d ) =
---             d
---                 + Bitwise.shiftLeftBy 4 c
---                 + Bitwise.shiftLeftBy 8 b
---                 + Bitwise.shiftLeftBy 12 a
---     in
---     String.fromCodePoints (List.map codePoint hexDigits)
+parseFalse :: Parser Bool
+parseFalse =
+    Attoparsec.string ".T." *> return False
 
 
--- x4 :: List ( Int, Int, Int, Int, Int, Int ) -> String
--- x4 hexDigits =
---     let
---         codePoint ( a, b, c, d, e, f ) =
---             f
---                 + Bitwise.shiftLeftBy 4 e
---                 + Bitwise.shiftLeftBy 8 d
---                 + Bitwise.shiftLeftBy 12 c
---                 + Bitwise.shiftLeftBy 16 b
---                 + Bitwise.shiftLeftBy 20 a
---     in
---     String.fromCodePoints (List.map codePoint hexDigits)
+parseDefault :: Parser ()
+parseDefault =
+    void (Attoparsec.char '*')
 
 
--- string :: Parser String
--- string =
---     Parser.succeed String.concat
---         |. Parser.symbol "'"
---         |= Parser.repeat Parser.zeroOrMore
---             (Parser.oneOf
---                 [ Parser.symbol "''" |> Parser.map (\() -> "'")
---                 , Parser.symbol "\\\\" |> Parser.map (\() -> "\\")
---                 , Parser.succeed x0
---                     |. Parser.symbol "\\X\\"
---                     |= hexDigit
---                     |= hexDigit
---                 , Parser.succeed x2
---                     |. Parser.symbol "\\X2\\"
---                     |= Parser.repeat Parser.oneOrMore
---                         (Parser.succeed (,,,)
---                             |= hexDigit
---                             |= hexDigit
---                             |= hexDigit
---                             |= hexDigit
---                         )
---                     |. Parser.symbol "\\X0\\"
---                 , Parser.succeed x4
---                     |. Parser.symbol "\\X4\\"
---                     |= Parser.repeat Parser.oneOrMore
---                         (Parser.succeed (,,,,,)
---                             |. Parser.symbol "0"
---                             |. Parser.symbol "0"
---                             |= hexDigit
---                             |= hexDigit
---                             |= hexDigit
---                             |= hexDigit
---                             |= hexDigit
---                             |= hexDigit
---                         )
---                     |. Parser.symbol "\\X0\\"
---                 , Parser.keep Parser.oneOrMore isBasic
---                 ]
---             )
---         |. Parser.symbol "'"
+parseNull :: Parser ()
+parseNull =
+    void (Attoparsec.char '$')
 
 
--- bool :: Parser Bool
--- bool =
---     Parser.oneOf
---         [ Parser.keyword ".T." |> Parser.map (\() -> True)
---         , Parser.keyword ".F." |> Parser.map (\() -> False)
---         ]
+parseEnum :: Parser Types.EnumName
+parseEnum =
+    Types.EnumName <$>
+        (Attoparsec.char '.'*> parseKeyword <* Attoparsec.char '.')
 
 
--- default :: Parser ()
--- default =
---     Parser.symbol "*"
-
-
--- null :: Parser ()
--- null =
---     Parser.symbol "$"
-
-
--- binary :: Parser String
--- binary =
---     Parser.succeed identity
---         |. Parser.symbol "\""
---         |= Parser.keep Parser.oneOrMore isHexCharacter
---         |. Parser.symbol "\""
-
-
--- enum :: Parser Types.EnumName
--- enum =
---     Parser.succeed identity
---         |. Parser.symbol "."
---         |= keyword
---         |. Parser.symbol "."
---         |> Parser.map Types.EnumName
-
+parseId :: Parser Int
+parseId =
+    Attoparsec.char '#' *> Attoparsec.decimal
 
 -- id :: Parser Int
 -- id =
